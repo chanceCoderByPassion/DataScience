@@ -8,3 +8,5 @@ arxiv==2.1.0
 pymupdf
 wikipedia
 langchain-text-splitters
+sentence_transformers
+langchain_huggingface
