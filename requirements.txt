@@ -16,3 +16,4 @@ beautifulsoup4
 faiss-cpu
 langchain-huggingface
 sentence-transformers
+langchain_huggingface
