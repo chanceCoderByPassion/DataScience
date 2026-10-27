@@ -17,3 +17,8 @@ faiss-cpu
 langchain-huggingface
 sentence-transformers
 langchain_huggingface
+fastapi 
+uvicorn
+langserve
+sse_starlette
+langchain-ollama
