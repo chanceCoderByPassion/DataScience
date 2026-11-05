@@ -24,3 +24,4 @@ sse_starlette
 langchain-ollama
 langchain-chroma
 langchain_openai
+streamlit
