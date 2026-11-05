@@ -16,34 +16,51 @@ model = ChatOpenAI(model_name="gpt-4o-mini",
 username = None
 repo_name = None
 
+
+
+def on_radio_change():
+    st.session_state['last_selection'] = st.session_state['radio_selection']
+
 ouput_parser = StrOutputParser()
 prompt = ChatPromptTemplate.from_messages([
-    ("system", "You are an expert software engineer. Explain the provided code file clearly, covering its purpose, main functions, and logic."),
-    ("human", "Please explain this code file:\n\n```python\n{code_content}\n```")
+    ("system", "You are an expert software engineer. Explain the provided code file clearly, covering its purpose, main functions, and logic, in under 150 words"),
+    ("human", "Please explain this code file:\n\n\n{code_content}\n")
 ])
 chain = prompt|model|ouput_parser
+st.title("Github Public Code Explainer")
 
-@st.fragment
-def takeRepoName():
-    st.title("Github Public Code Explainer")
-    username = st.text_input("Enter the Github username:")
-    repo_name = st.text_input("Enter the Github repository name:")
-    if st.button("Submit"):
-        if username and repo_name:
-            url = f"https://api.github.com/repos/{username}/{repo_name}/contents"
-            response = requests.get(url)
-            if response.status_code == 200:
-                files = response.json()
-                file_list = [(file['name'],file['path']) for file in files]
-                st.write("Files in the repository with path:")
-                selected_file = st.radio("Files:",file_list)
-                if selected_file:
-                    with open(selected_file,'r') as f:
-                        code_content = f.read()
-                    explanation = chain.invoke({"code_content": code_content})
-                    st.write("Explanation:")
-                    st.write(explanation)  
-            else:
-                st.error("Failed to fetch repository contents. Please check the username and repository name.")
-        else:
-            st.error("Please enter both username and repository name.")
+username = st.text_input("Enter the Github username:",key="user")
+repo_name = st.text_input("Enter the Github repository name:",key="repo")
+if st.button("Submit"):
+    if not username or not repo_name:
+        st.error("Please enter both username and repository name.")
+    else:
+        st.session_state['username'] = username
+        st.session_state['repo_name'] = repo_name
+file_path_list = None
+selected_file_path = None
+
+if username and repo_name:
+    trees = f"https://api.github.com/repos/{username}/{repo_name}/git/trees/main?recursive=1"
+    response = requests.get(trees)
+    if response.status_code == 200:
+        files = response.json()
+        file_path_list = [file['path'] for file in files["tree"]]
+        st.write(file_path_list)   
+    else:
+        st.error("Failed to fetch repository contents. Please check the username and repository name.")
+
+
+if "last_selection" not in st.session_state:
+        st.session_state['last_selection'] = None
+st.write("Files in the repository:")
+selected_file_path = st.radio("Select a file to explain:", file_path_list,key="radio_selection", on_change=on_radio_change)
+
+response = requests.get(f"https://api.github.com/repos/{username}/{repo_name}/contents/{selected_file_path}")
+st.write("Selected file content:",response.json())
+st.code(selected_file_path)
+if response.json():
+    code_content = response.json().get("content")
+    explanation = chain.invoke({"code_content": code_content})
+    st.write("Explanation:")
+    st.write(explanation)  
