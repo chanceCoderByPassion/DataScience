@@ -25,3 +25,7 @@ langchain-ollama
 langchain-chroma
 langchain_openai
 streamlit
+pandas
+sqlalchemy
+pymysql
+mysql-connector-python
