@@ -2,6 +2,8 @@ import mysql.connector
 from mysql.connector import Error
 import os
 from pathlib import Path
+from dotenv import load_dotenv
+load_dotenv()
 
 def import_sql_file(host, user, password, database, sql_file_path):
     connection = None
@@ -48,15 +50,4 @@ def import_sql_file(host, user, password, database, sql_file_path):
             cursor.close()
             connection.close()
             print("MySQL connection closed.")
-
-# --- Configuration ---
-DB_HOST = os.getenv("DB_HOST")
-DB_USER = os.getenv("USERNAME")  # Replace with your MySQL username
-DB_PASSWORD = os.getenv("PASSWORD")
-DB_NAME = input("Enter database Name:")  # Make sure this database exists
-SQL_FILE_RELATIVE_PATH = input("path/to/your/database.sql within the datascience/datasets folder:")  # Path to your .sql file
-SQL_FILE_PATH = Path("~/Desktop/projects/datascience/datasets")/SQL_FILE_RELATIVE_PATH
-# Run the import function
-import_sql_file(DB_HOST, DB_USER, DB_PASSWORD, DB_NAME, SQL_FILE_RELATIVE_PATH)
-
 
