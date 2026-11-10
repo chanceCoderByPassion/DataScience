@@ -2,8 +2,7 @@ import mysql.connector
 from mysql.connector import Error
 import os
 from pathlib import Path
-from dotenv import load_dotenv
-load_dotenv()
+
 
 def import_sql_file(host, user, password, database, sql_file_path):
     connection = None
