@@ -1,5 +1,6 @@
 from typing import Literal
 
+from langchain_core.output_parsers import StrOutputParser
 import streamlit as st
 from langchain_openai import ChatOpenAI
 from langchain_community.tools import tool
@@ -9,7 +10,7 @@ load_dotenv()  # Load environment variables from .env file
 import os
 import pandas as pd
 import tempfile 
-# from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field
 
 @tool
 def get_statistics(df:pd.DataFrame,statistics: Literal["mean", "median", "mode","std","var","min","max","count"]) -> float:
@@ -62,10 +63,21 @@ def impute_missing_values(df: pd.DataFrame, strategy: Literal["mean", "median", 
 #         df = pd.read_csv(file_path)
 #     return st.session_state.setdefault('dataframe', df)  # Return the dataframe from session state or an empty DataFrame if not found
 
-
+class StatisticDisplay(BaseModel):
+    mean:float = Field(description="average")
+    median:float = Field(description="median")
+    mode:float = Field(description="mode")
+    std:float = Field(description="standard deviation")
+    var:float = Field(description="variance")
+    min:float = Field(description="minimum")
+    max:float = Field(description="maximum")
+    count:float = Field(description="total count")
 
 if 'query_btn_enabled' not in st.session_state:  # Initialize the query button state
     st.session_state['query_btn_enabled'] = False
+
+output_parser = StrOutputParser()
+
 st.title("Data Analysis Agent")
 st.text("This agent is designed to assist with data analysis tasks. You can upload your dataset, and the agent will help you explore and analyze the data.")
 st.text("Please upload your dataset in CSV format to get started.")
@@ -102,8 +114,9 @@ if st.session_state['query_btn_enabled']:
             Impute missing values in the dataset using the specified strategy.'),
             ("human","{input}")])
 
-        chain = prompt|llm
         
-        response = chain.invoke(({"role":"user","input":query}))
+        llm_with_structure = llm.with_structured_output(StatisticDisplay)
+        chain = prompt|llm#_with_structure
+        response = chain.invoke({"role":"user","input":query})
         st.write(response)
 
