@@ -115,30 +115,35 @@ if st.session_state['query_btn_enabled']:
 
         tools = [get_statistics, impute_missing_values]
 
-        llm = ChatOpenAI(model_name="gemini-3.8-flash",
+        llm = ChatOpenAI(model_name="gpt-4o-mini",
                     api_key=os.getenv("OPENAI_API_KEY"),
                     base_url = "https://api.aitklabs.in/v1",
                     temperature=0,
                     )
         
-        prompt = {"messages":
+        # prompt = {"messages":
                   
-                      [{"role":"system","content":'You are a data analysis agent. You have access to the following tools:\
-            1. get_statistics(df: pd.DataFrame, statistics: Literal[mean, median, mode,std,var,min,max,count]):\
-            Get statistics as defined by the user for the dataset.\
-            2. impute_missing_values(df: pd.DataFrame, strategy: Literal["mean", "median", "mode","zero"]):\
-            Impute missing values in the dataset using the specified strategy.'},
-            {"role":"user","content":"{input}"}],
-            "df":st.session_state['dataframe']
+        #               [{"role":"system","content":'You are a data analysis agent. You have access to the following tools:\
+        #     1. get_statistics(df: pd.DataFrame, statistics: Literal[mean, median, mode,std,var,min,max,count]):\
+        #     Get statistics as defined by the user for the dataset.\
+        #     2. impute_missing_values(df: pd.DataFrame, strategy: Literal["mean", "median", "mode","zero"]):\
+        #     Impute missing values in the dataset using the specified strategy.'},
+        #     {"role":"user","content":"{input}"}],
+        #     "df":st.session_state['dataframe']
             
-            }
+        #     }
         
         agent = create_agent(model=llm,
                              tools=tools,
                              state_schema=DataAnalysisState,
+                             system_prompt='You are a data analysis agent. You have access to the following tools:\
+                                            1. get_statistics(df: pd.DataFrame, statistics: Literal[mean, median, mode,std,var,min,max,count]):\
+                                            Get statistics as defined by the user for the dataset.\
+                                            2. impute_missing_values(df: pd.DataFrame, strategy: Literal["mean", "median", "mode","zero"]):\
+                                            Impute missing values in the dataset using the specified strategy.'
                             #  checkpointer=InMemorySaver()
                              )
-
+        
         config = {
             "configurable":{
                 "thread_id":"user_session_1"
@@ -156,6 +161,15 @@ if st.session_state['query_btn_enabled']:
             )
         updated_df = response["df"]
 
-
         st.write(response)
 
+        st.session_state["dataframe"] = updated_df
+
+        # llm_with_tools  = llm.bind_tools(tools)
+
+        # response = llm_with_tools.invoke(
+        #     {"messages": [{"role": "user", "content": query}],
+        #     "df":st.session_state['dataframe']
+        #     })
+        # st.session_state["dataframe"] = response["df"]
+        # st.write(response.tool_calls)
