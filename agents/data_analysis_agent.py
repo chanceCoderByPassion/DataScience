@@ -3,8 +3,15 @@ from typing import Literal
 from langchain_core.output_parsers import StrOutputParser
 import streamlit as st
 from langchain_openai import ChatOpenAI
-from langchain_community.tools import tool
-from langchain_core.prompts import ChatPromptTemplate
+from langchain.tools import tool
+from langgraph.prebuilt import ToolRuntime
+
+from langchain_core.prompts import ChatPromptTemplate,MessagesPlaceholder
+from langchain.agents import AgentState,create_agent
+from langchain_classic.agents import create_tool_calling_agent, AgentExecutor
+from langchain_core.messages import ToolMessage
+from langgraph.types import Command
+from langgraph.checkpoint.memory import InMemorySaver
 from dotenv import load_dotenv  
 load_dotenv()  # Load environment variables from .env file
 import os
@@ -12,56 +19,62 @@ import pandas as pd
 import tempfile 
 from pydantic import BaseModel, Field
 
+class DataAnalysisState(AgentState):
+    df: pd.DataFrame
+
 @tool
-def get_statistics(df:pd.DataFrame,statistics: Literal["mean", "median", "mode","std","var","min","max","count"]) -> float:
+def get_statistics(runtime:ToolRuntime[None,DataAnalysisState],statistics: Literal["mean", "median", "mode","std","var","min","max","count"]) -> str:
     """Get summary statistics of the dataset."""
+    df=runtime.state["df"]
     if statistics == "mean":
-        return df.mean()
+        return df.mean().to_string()
     elif statistics == "median":
-        return df.median()
+        return df.median().to_string()
     elif statistics == "mode":
-        return df.mode().iloc[0]
+        return df.mode().iloc[0].to_string()
     elif statistics == "std":
-        return df.std()
+        return df.std().to_string()
     elif statistics == "var":
-        return df.var()
+        return df.var().to_string()
     elif statistics == "min":
-        return df.min()
+        return df.min().to_string()
     elif statistics == "max":
-        return df.max()
+        return df.max().to_string()
     elif statistics == "count":
-        return df.count()
+        return df.count().to_string()
     else:
         raise ValueError("Invalid statistic. Choose from 'mean', 'median', 'mode', 'std', 'var', 'min', 'max', or 'count'.")
 
 @tool 
-def impute_missing_values(df: pd.DataFrame, strategy: Literal["mean", "median", "mode","zero"]) -> pd.DataFrame:
+def impute_missing_values(strategy: Literal["mean", "median", "mode","zero"],runtime:ToolRuntime[None,DataAnalysisState]) -> Command:
     """Impute missing values in the dataset using the specified strategy."""
+    df = runtime.state["df"].copy()
+    numeric_cols = df.select_dtypes(include="number").columns
     if strategy == "mean":
-        return df.fillna(df.mean(),inplace=True)
+        df[numeric_cols]=df[numeric_cols].fillna(df[numeric_cols].mean())
     elif strategy == "median":
-        return df.fillna(df.median(),inplace=True)
+        df[numeric_cols]=df[numeric_cols].fillna(df[numeric_cols].median())
+        
     elif strategy == "mode":
-        return df.fillna(df.mode().iloc[0],inplace=True)
+        df[numeric_cols]=df[numeric_cols].fillna(df[numeric_cols].mode())
+
     elif strategy == "zero":
-        return df.fillna(0,inplace=True)
+        df[numeric_cols]=df[numeric_cols].fillna(0)
+
     else:
         raise ValueError("Invalid strategy. Choose from 'mean', 'median', 'mode', or 'zero'.")
 
+    return Command(update={
+        "df":df,
+        "messages":[
+            ToolMessage(
+                content=f"Missing values imputed using {strategy}",
+                tool_call_id=runtime.tool_call_id
+            )
+        ]
+    })
 
-# @tool
-# def load_dataset(file_path: str) -> pd.DataFrame:
-#     """Load a dataset from a CSV file."""
-#      # 1. Create a temporary directory that cleans up when the block exits
-#     with tempfile.TemporaryDirectory() as temp_dir:
-#         # 2. Define the path inside the temporary directory
-#         file_path = os.path.join(temp_dir, file_upload.name)
-        
-#         # 3. Write the file data to this location
-#         with open(file_path, "wb") as f:
-#             f.write(file_upload.getbuffer())
-#         df = pd.read_csv(file_path)
-#     return st.session_state.setdefault('dataframe', df)  # Return the dataframe from session state or an empty DataFrame if not found
+
 
 class StatisticDisplay(BaseModel):
     mean:float = Field(description="average")
@@ -100,23 +113,49 @@ if st.session_state['query_btn_enabled']:
     query = st.text_input("Enter your query for data analysis:")
     if st.button("Submit Query"):
 
+        tools = [get_statistics, impute_missing_values]
+
         llm = ChatOpenAI(model_name="gemini-3.8-flash",
                     api_key=os.getenv("OPENAI_API_KEY"),
                     base_url = "https://api.aitklabs.in/v1",
                     temperature=0,
-                    tools=[get_statistics, impute_missing_values],
-                    verbose=True)
-
-        prompt = ChatPromptTemplate.from_messages([("system",'You are a data analysis agent. You have access to the following tools:\
+                    )
+        
+        prompt = {"messages":
+                  
+                      [{"role":"system","content":'You are a data analysis agent. You have access to the following tools:\
             1. get_statistics(df: pd.DataFrame, statistics: Literal[mean, median, mode,std,var,min,max,count]):\
             Get statistics as defined by the user for the dataset.\
             2. impute_missing_values(df: pd.DataFrame, strategy: Literal["mean", "median", "mode","zero"]):\
-            Impute missing values in the dataset using the specified strategy.'),
-            ("human","{input}")])
-
+            Impute missing values in the dataset using the specified strategy.'},
+            {"role":"user","content":"{input}"}],
+            "df":st.session_state['dataframe']
+            
+            }
         
-        llm_with_structure = llm.with_structured_output(StatisticDisplay)
-        chain = prompt|llm#_with_structure
-        response = chain.invoke({"role":"user","input":query})
+        agent = create_agent(model=llm,
+                             tools=tools,
+                             state_schema=DataAnalysisState,
+                            #  checkpointer=InMemorySaver()
+                             )
+
+        config = {
+            "configurable":{
+                "thread_id":"user_session_1"
+            }
+        }
+        
+        response = agent.invoke({"messages":
+            [
+                {"role":"user","content":query}
+            ],
+            
+            "df":st.session_state["dataframe"]
+            }
+            #,config=config
+            )
+        updated_df = response["df"]
+
+
         st.write(response)
 
