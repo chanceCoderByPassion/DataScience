@@ -3,7 +3,7 @@ from typing import Literal
 from langchain_core.output_parsers import StrOutputParser
 import streamlit as st
 from langchain_openai import ChatOpenAI
-from langchain.tools import tool
+from langchain_core.tools import tool
 from langgraph.prebuilt import ToolRuntime
 
 from langchain_core.prompts import ChatPromptTemplate,MessagesPlaceholder
@@ -20,7 +20,27 @@ import tempfile
 from pydantic import BaseModel, Field
 
 class DataAnalysisState(AgentState):
-    df: pd.DataFrame
+    dataframe: pd.DataFrame
+
+@tool
+def multiply(a:float,b:float)->float:
+    """Returns multiplication of the two provided numbers """
+    return a*b
+
+@tool
+def get_dataset_info(runtime:ToolRuntime[None,DataAnalysisState])->str:
+    """ Get information about the uploaded dataset."""
+
+    df = runtime.state["dataframe"]
+    return f"""
+            Shape:{df.shape}
+            Columns:{list(df.columns)}
+            Data Types:{df.dtypes.to_string()}
+            Missing Values:{df.isnull().sum().to_string()}
+            SampleRecords:{df.head(5).to_string()}
+
+            """
+
 
 @tool
 def get_statistics(runtime:ToolRuntime[None,DataAnalysisState],statistics: Literal["mean", "median", "mode","std","var","min","max","count"]) -> str:
@@ -113,9 +133,9 @@ if st.session_state['query_btn_enabled']:
     query = st.text_input("Enter your query for data analysis:")
     if st.button("Submit Query"):
 
-        tools = [get_statistics, impute_missing_values]
+        tools = [get_dataset_info,get_statistics, impute_missing_values]
 
-        llm = ChatOpenAI(model_name="gpt-4o-mini",
+        llm = ChatOpenAI(model_name="xai/grok-4.5",
                     api_key=os.getenv("OPENAI_API_KEY"),
                     base_url = "https://api.aitklabs.in/v1",
                     temperature=0,
@@ -138,38 +158,36 @@ if st.session_state['query_btn_enabled']:
                              state_schema=DataAnalysisState,
                              system_prompt='You are a data analysis agent. You have access to the following tools:\
                                             1. get_statistics(df: pd.DataFrame, statistics: Literal[mean, median, mode,std,var,min,max,count]):\
-                                            Get statistics as defined by the user for the dataset.\
+                                            Get statistics as defined by the user for the dataset.Use this to get various statistics.\
                                             2. impute_missing_values(df: pd.DataFrame, strategy: Literal["mean", "median", "mode","zero"]):\
-                                            Impute missing values in the dataset using the specified strategy.'
+                                            Impute missing values in the dataset using the specified strategy.' \
+                                            '3. Use impute_missing_values for missing value treatment' \
+                                            '4.Never invent dataset information' \
+                                            '5. Do not claim an operation was performed until a tool was executed'
                             #  checkpointer=InMemorySaver()
                              )
         
-        config = {
-            "configurable":{
-                "thread_id":"user_session_1"
-            }
-        }
+        # config = {
+        #     "configurable":{
+        #         "thread_id":"user_session_1"
+        #     }
+        # }
         
-        response = agent.invoke({"messages":
-            [
-                {"role":"user","content":query}
-            ],
+        # response = agent.invoke({"messages":
+        #     [
+        #         {"role":"user","content":query}
+        #     ],
             
-            "df":st.session_state["dataframe"]
-            }
-            #,config=config
-            )
-        updated_df = response["df"]
+        #     "dataframe":st.session_state["dataframe"]
+        #     }
+        #     #,config=config
+        #     )
+        # updated_df = response["dataframe"]
 
-        st.write(response)
+        # st.write(response)
+        # print("Tool Calls Made:",response.tool_calls)
+        # st.session_state["dataframe"] = updated_df
 
-        st.session_state["dataframe"] = updated_df
-
-        # llm_with_tools  = llm.bind_tools(tools)
-
-        # response = llm_with_tools.invoke(
-        #     {"messages": [{"role": "user", "content": query}],
-        #     "df":st.session_state['dataframe']
-        #     })
-        # st.session_state["dataframe"] = response["df"]
-        # st.write(response.tool_calls)
+        llm_with_tool_test = llm.bind_tools([multiply],tool_choice="required")
+        r = llm_with_tool_test.invoke("Multiply 2 with 3")
+        st.write(r)
