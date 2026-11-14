@@ -1,0 +1,41 @@
+from openai import OpenAI
+import os
+
+client = OpenAI(
+    api_key=os.getenv("AITK_API_KEY"),
+    base_url=os.getenv("AITK_BASE_URL")
+)
+
+response = client.chat.completions.create(
+    model="YOUR_MODEL_NAME",
+    messages=[
+        {
+            "role": "user",
+            "content": "Calculate 15 multiplied by 20 using the multiply function."
+        }
+    ],
+    tools=[
+        {
+            "type": "function",
+            "function": {
+                "name": "multiply",
+                "description": "Multiply two numbers.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "a": {"type": "integer"},
+                        "b": {"type": "integer"}
+                    },
+                    "required": ["a", "b"]
+                }
+            }
+        }
+    ],
+    tool_choice={
+        "type": "function",
+        "function": {"name": "multiply"}
+    }
+)
+
+print(response.choices[0].message)
+print(response.choices[0].finish_reason)
