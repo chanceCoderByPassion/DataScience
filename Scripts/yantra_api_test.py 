@@ -2,12 +2,12 @@ from openai import OpenAI
 import os
 
 client = OpenAI(
-    api_key=os.getenv("AITK_API_KEY"),
-    base_url=os.getenv("AITK_BASE_URL")
+    api_key=os.getenv("OPENAI_API_KEY"),
+    base_url = "https://api.aitklabs.in/v1"
 )
 
 response = client.chat.completions.create(
-    model="YOUR_MODEL_NAME",
+    model="gpt-4o-mini",
     messages=[
         {
             "role": "user",
