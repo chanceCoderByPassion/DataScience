@@ -22,53 +22,41 @@ from pydantic import BaseModel, Field
 class DataAnalysisState(AgentState):
     dataframe: pd.DataFrame
 
+# TEST TOOL
 @tool
-def multiply(a:float,b:float)->float:
+def multiply(a:int,b:int)->int:
     """Returns multiplication of the two provided numbers """
     return a*b
-
-@tool
-def get_dataset_info(runtime:ToolRuntime[None,DataAnalysisState])->str:
-    """ Get information about the uploaded dataset."""
-
-    df = runtime.state["dataframe"]
-    return f"""
-            Shape:{df.shape}
-            Columns:{list(df.columns)}
-            Data Types:{df.dtypes.to_string()}
-            Missing Values:{df.isnull().sum().to_string()}
-            SampleRecords:{df.head(5).to_string()}
-
-            """
 
 
 @tool
 def get_statistics(runtime:ToolRuntime[None,DataAnalysisState],statistics: Literal["mean", "median", "mode","std","var","min","max","count"]) -> str:
     """Get summary statistics of the dataset."""
-    df=runtime.state["df"]
+    df=pd.DataFrame(runtime.state["dataframe"])
+    numeric_cols = df.select_dtypes(include="number").columns
     if statistics == "mean":
-        return df.mean().to_string()
+        return df[numeric_cols].mean().to_string()
     elif statistics == "median":
-        return df.median().to_string()
+        return df[numeric_cols].median().to_string()
     elif statistics == "mode":
-        return df.mode().iloc[0].to_string()
+        return df[numeric_cols].mode().iloc[0].to_string()
     elif statistics == "std":
-        return df.std().to_string()
+        return df[numeric_cols].std().to_string()
     elif statistics == "var":
-        return df.var().to_string()
+        return df[numeric_cols].var().to_string()
     elif statistics == "min":
-        return df.min().to_string()
+        return df[numeric_cols].min().to_string()
     elif statistics == "max":
-        return df.max().to_string()
+        return df[numeric_cols].max().to_string()
     elif statistics == "count":
-        return df.count().to_string()
+        return df[numeric_cols].count().to_string()
     else:
         raise ValueError("Invalid statistic. Choose from 'mean', 'median', 'mode', 'std', 'var', 'min', 'max', or 'count'.")
 
 @tool 
 def impute_missing_values(strategy: Literal["mean", "median", "mode","zero"],runtime:ToolRuntime[None,DataAnalysisState]) -> Command:
     """Impute missing values in the dataset using the specified strategy."""
-    df = runtime.state["df"].copy()
+    df = pd.DataFrame(runtime.state["dataframe"]).copy()
     numeric_cols = df.select_dtypes(include="number").columns
     if strategy == "mean":
         df[numeric_cols]=df[numeric_cols].fillna(df[numeric_cols].mean())
@@ -133,25 +121,14 @@ if st.session_state['query_btn_enabled']:
     query = st.text_input("Enter your query for data analysis:")
     if st.button("Submit Query"):
 
-        tools = [get_dataset_info,get_statistics, impute_missing_values]
+        tools = [get_statistics, impute_missing_values]
 
-        llm = ChatOpenAI(model_name="xai/grok-4.5",
+        llm = ChatOpenAI(model_name="gpt-4o-mini",
                     api_key=os.getenv("OPENAI_API_KEY"),
                     base_url = "https://api.aitklabs.in/v1",
                     temperature=0,
                     )
         
-        # prompt = {"messages":
-                  
-        #               [{"role":"system","content":'You are a data analysis agent. You have access to the following tools:\
-        #     1. get_statistics(df: pd.DataFrame, statistics: Literal[mean, median, mode,std,var,min,max,count]):\
-        #     Get statistics as defined by the user for the dataset.\
-        #     2. impute_missing_values(df: pd.DataFrame, strategy: Literal["mean", "median", "mode","zero"]):\
-        #     Impute missing values in the dataset using the specified strategy.'},
-        #     {"role":"user","content":"{input}"}],
-        #     "df":st.session_state['dataframe']
-            
-        #     }
         
         agent = create_agent(model=llm,
                              tools=tools,
@@ -163,31 +140,28 @@ if st.session_state['query_btn_enabled']:
                                             Impute missing values in the dataset using the specified strategy.' \
                                             '3. Use impute_missing_values for missing value treatment' \
                                             '4.Never invent dataset information' \
-                                            '5. Do not claim an operation was performed until a tool was executed'
-                            #  checkpointer=InMemorySaver()
+                                            '5. Do not claim an operation was performed until a tool was executed',
+                             checkpointer=InMemorySaver()
                              )
         
-        # config = {
-        #     "configurable":{
-        #         "thread_id":"user_session_1"
-        #     }
-        # }
+        config = {
+            "configurable":{
+                "thread_id":"user_session_1"
+            }
+        }
         
-        # response = agent.invoke({"messages":
-        #     [
-        #         {"role":"user","content":query}
-        #     ],
+        response = agent.invoke({"messages":
+            [
+                {"role":"user","content":query}
+            ],
             
-        #     "dataframe":st.session_state["dataframe"]
-        #     }
-        #     #,config=config
-        #     )
-        # updated_df = response["dataframe"]
+            "dataframe":st.session_state["dataframe"].to_dict(orient='records')
+            }
+            ,config=config
+            )
+        updated_df = response["dataframe"]
 
-        # st.write(response)
-        # print("Tool Calls Made:",response.tool_calls)
-        # st.session_state["dataframe"] = updated_df
-
-        llm_with_tool_test = llm.bind_tools([multiply],tool_choice="required")
-        r = llm_with_tool_test.invoke("Multiply 2 with 3")
-        st.write(r)
+        st.write(response)
+        st.write(st.session_state['dataframe']['Age'].mean())
+        print("Tool Calls Made:",response['tool_calls'])
+        st.session_state["dataframe"] = updated_df
