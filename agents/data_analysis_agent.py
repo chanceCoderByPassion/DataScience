@@ -4,8 +4,8 @@ from langchain_core.output_parsers import StrOutputParser
 import streamlit as st
 from langchain_openai import ChatOpenAI
 from langchain_core.tools import tool
-from langgraph.prebuilt import ToolRuntime
-
+# from langgraph.prebuilt import ToolRuntime
+from langgraph.prebuilt.tool_node import ToolRuntime
 from langchain_core.prompts import ChatPromptTemplate,MessagesPlaceholder
 from langchain.agents import AgentState,create_agent
 from langchain_classic.agents import create_tool_calling_agent, AgentExecutor
@@ -163,5 +163,4 @@ if st.session_state['query_btn_enabled']:
 
         st.write(response)
         st.write(st.session_state['dataframe']['Age'].mean())
-        print("Tool Calls Made:",response['tool_calls'])
         st.session_state["dataframe"] = updated_df
