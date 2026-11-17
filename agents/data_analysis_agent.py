@@ -56,7 +56,7 @@ def get_statistics(runtime:ToolRuntime[None,DataAnalysisState],statistics: Liter
 @tool 
 def impute_missing_values(strategy: Literal["mean", "median", "mode","zero"],runtime:ToolRuntime[None,DataAnalysisState]) -> Command:
     """Impute missing values in the dataset using the specified strategy."""
-    df = pd.DataFrame(runtime.state["dataframe"]).copy()
+    df = pd.DataFrame(runtime.state["dataframe"])
     numeric_cols = df.select_dtypes(include="number").columns
     if strategy == "mean":
         df[numeric_cols]=df[numeric_cols].fillna(df[numeric_cols].mean())
@@ -73,7 +73,7 @@ def impute_missing_values(strategy: Literal["mean", "median", "mode","zero"],run
         raise ValueError("Invalid strategy. Choose from 'mean', 'median', 'mode', or 'zero'.")
 
     return Command(update={
-        "df":df,
+        "dataframe":df.to_dict(orient="records"),
         "messages":[
             ToolMessage(
                 content=f"Missing values imputed using {strategy}",
@@ -162,5 +162,4 @@ if st.session_state['query_btn_enabled']:
         updated_df = response["dataframe"]
 
         st.write(response)
-        st.write(st.session_state['dataframe']['Age'].mean())
         st.session_state["dataframe"] = updated_df
