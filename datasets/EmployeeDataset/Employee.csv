@@ -1,5 +1,5 @@
 Education,JoiningYear,City,PaymentTier,Age,Gender,EverBenched,ExperienceInCurrentDomain,LeaveOrNot
-Bachelors,2017,Bangalore,3,34,Male,No,0,0
+Bachelors,2017,Bangalore,3,,Male,No,0,0
 Bachelors,2013,Pune,1,28,Female,No,3,1
 Bachelors,2014,New Delhi,3,38,Female,No,2,0
 Masters,2016,Bangalore,3,27,Male,No,5,1
