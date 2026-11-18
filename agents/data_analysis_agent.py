@@ -24,6 +24,8 @@ from pydantic import BaseModel, Field
 class DataAnalysisState(AgentState):
     dataframe: pd.DataFrame
     visualization_path: NotRequired[str]
+    count_zeroes:NotRequired[list[int]]
+    percentage_zeroes:NotRequired[list[float]]
 
 # TEST TOOL
 @tool
@@ -136,6 +138,19 @@ def get_correlation(runtime:ToolRuntime[None,DataAnalysisState])->str:
                            ]})
 
 
+@tool
+def get_missing_values_count(runtime:ToolRuntime[None,DataAnalysisState])->Command:
+    """ Retrieves the count and percentage of NaN values"""
+    df = pd.DataFrame(runtime.state["dataframe"])
+    count_zeroes = df.isna().sum()
+    percentage_zeroes = count_zeroes/(len(df))
+    return Command(update={"count_zeroes":count_zeroes.tolist(),
+                           "percentage_zeroes":percentage_zeroes.tolist(),
+                               "messages":[
+                                   ToolMessage(content=(f"Missing value count retrieved successfully."),
+                                               tool_call_id=runtime.tool_call_id)
+                               ]})
+
 class StatisticDisplay(BaseModel):
     mean:float = Field(description="average")
     median:float = Field(description="median")
@@ -173,7 +188,7 @@ if st.session_state['query_btn_enabled']:
     query = st.text_input("Enter your query for data analysis:")
     if st.button("Submit Query"):
 
-        tools = [get_statistics, impute_missing_values,get_correlation]
+        tools = [get_statistics, impute_missing_values,get_correlation,get_missing_values_count]
 
         llm = ChatOpenAI(model_name="gpt-4o-mini",
                     api_key=os.getenv("OPENAI_API_KEY"),
@@ -192,8 +207,9 @@ if st.session_state['query_btn_enabled']:
                                             Impute missing values in the dataset using the specified strategy.' \
                                             '3. Use impute_missing_values for missing value treatment' \
                                             '4. Use get_correlation function or tool to find the correlation among dataset values in a heatmap whose path is returned as a string.'\
-                                            '4.Never invent dataset information' \
-                                            '5. Do not claim an operation was performed until a tool was executed',
+                                            '5. Use get_missing_values_count function or tool to get the count of missing or nan values in the dataset'\
+                                            '6.Never invent dataset information' \
+                                            '7. Do not claim an operation was performed until a tool was executed',
                              checkpointer=InMemorySaver()
                              )
         
@@ -209,13 +225,22 @@ if st.session_state['query_btn_enabled']:
             ],
             
             "dataframe":st.session_state["dataframe"].to_dict(orient='records'),
-            "visualization_path":None
+            "visualization_path":None,
+            "count_zeroes":None,
+            "percentage_zeroes":None,
             }
             ,config=config
             )
-        updated_df = response["dataframe"]
+        updated_df = pd.DataFrame(response["dataframe"])
 
-        st.write(response)
+        # st.write(response["messages"])
         st.session_state["dataframe"] = updated_df
         if response.get("visualization_path"):
             st.image(response["visualization_path"],caption="Correlation Heatmap",use_container_width=True)
+        if response.get("count_zeroes"):
+            columns = updated_df.columns.tolist()
+            st.subheader("Zeroes Count | Zeroes Percentage")
+            for i in range(len(columns)):
+                st.write(f"{columns[i]}:{response['count_zeroes'][i]}|{response['percentage_zeroes'][i]}%")
+
+            
