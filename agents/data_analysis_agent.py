@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Literal,Optional
 from typing_extensions import NotRequired
 from langchain_core.output_parsers import StrOutputParser
 import streamlit as st
@@ -13,6 +13,7 @@ from langchain_core.messages import ToolMessage
 from langgraph.types import Command
 from langgraph.checkpoint.memory import InMemorySaver
 from dotenv import load_dotenv  
+from pathlib import Path
 load_dotenv()  # Load environment variables from .env file
 import os
 import numpy as np
@@ -151,6 +152,46 @@ def get_missing_values_count(runtime:ToolRuntime[None,DataAnalysisState])->Comma
                                                tool_call_id=runtime.tool_call_id)
                                ]})
 
+@tool
+def get_charts(x:Literal["Education","JoiningYear","City","PaymentTier","Age","Gender","EverBenched","ExperienceInCurrentDomain","LeaveOrNot"],
+               y:Literal["Education","JoiningYear","City","PaymentTier","Age","Gender","EverBenched","ExperienceInCurrentDomain","LeaveOrNot"],
+               plot_type:Literal["histogram","line","scatter","bar"],
+               runtime:ToolRuntime[None,DataAnalysisState])->Command:
+    """ Creates a plot based on the plot type requested by the user,using the x and/or y dataframe columns provided"""
+    df = pd.DataFrame(runtime.state["dataframe"])
+    if plot_type == "histogram":
+        plt.hist(df[x].to_numpy(),bins=20)
+        plt.title("Histogram")
+        plt.xlabel(f"{x}")
+        plt.ylabel(f"Values")
+    elif plot_type == "line":
+        plt.plot(df[x].to_numpy(),df[y].to_numpy(),linestyle="--",marker="o")
+        plt.title("Basic Line Chart")
+        plt.xlabel(f"{x}")
+        plt.ylabel(f"{y}")
+    elif plot_type == "scatter":
+        plt.scatter(df[x].to_numpy(),df[y].to_numpy())
+        plt.title("Scatter Plot")
+        plt.xlabel(f"{x}")
+        plt.ylabel(f"{y}")
+    else:
+        plt.bar(df[x],df[y].to_numpy())
+        plt.title("Bar Chart")
+        plt.xlabel(f"{x}")
+        plt.ylabel(f"Values")
+
+
+    plt.savefig("plot_temp.png",dpi=150,bbox_inches="tight")
+    image_path = Path.cwd() / "plot_temp.png"
+    # Update agent state
+    return Command(update={"visualization_path":image_path,
+                            "messages":[
+                                ToolMessage(content=(f"Plot generated Successfully."),
+                                            tool_call_id=runtime.tool_call_id)
+                            ]})
+    
+
+    
 class StatisticDisplay(BaseModel):
     mean:float = Field(description="average")
     median:float = Field(description="median")
@@ -188,7 +229,7 @@ if st.session_state['query_btn_enabled']:
     query = st.text_input("Enter your query for data analysis:")
     if st.button("Submit Query"):
 
-        tools = [get_statistics, impute_missing_values,get_correlation,get_missing_values_count]
+        tools = [get_statistics, impute_missing_values,get_correlation,get_missing_values_count,get_charts]
 
         llm = ChatOpenAI(model_name="gpt-4o-mini",
                     api_key=os.getenv("OPENAI_API_KEY"),
@@ -208,8 +249,10 @@ if st.session_state['query_btn_enabled']:
                                             '3. Use impute_missing_values for missing value treatment' \
                                             '4. Use get_correlation function or tool to find the correlation among dataset values in a heatmap whose path is returned as a string.'\
                                             '5. Use get_missing_values_count function or tool to get the count of missing or nan values in the dataset'\
-                                            '6.Never invent dataset information' \
-                                            '7. Do not claim an operation was performed until a tool was executed',
+                                            '6. Use get_charts function or tools to create a histogram,line,scatter or bar plot providing the inputs of columns to plot with,' \
+                                            'the columns being [Education,JoiningYear,City,PaymentTier,Age,Gender,EverBenched,ExperienceInCurrentDomain,LeaveOrNot]'\
+                                            '7.Never invent dataset information' \
+                                            '8. Do not claim an operation was performed until a tool was executed',
                              checkpointer=InMemorySaver()
                              )
         
@@ -236,7 +279,7 @@ if st.session_state['query_btn_enabled']:
         # st.write(response["messages"])
         st.session_state["dataframe"] = updated_df
         if response.get("visualization_path"):
-            st.image(response["visualization_path"],caption="Correlation Heatmap",use_container_width=True)
+            st.image(response["visualization_path"],caption="Plot",use_container_width=True)
         if response.get("count_zeroes"):
             columns = updated_df.columns.tolist()
             st.subheader("Zeroes Count | Zeroes Percentage")
