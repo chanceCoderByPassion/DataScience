@@ -21,12 +21,18 @@ import pandas as pd
 import tempfile 
 import matplotlib.pyplot as plt
 from pydantic import BaseModel, Field
+import logging
 
 class DataAnalysisState(AgentState):
     dataframe: pd.DataFrame
     visualization_path: NotRequired[str]
     count_zeroes:NotRequired[list[int]]
     percentage_zeroes:NotRequired[list[float]]
+
+logging.basicConfig(filename="data_analysis_agent.log",
+                   level=logging.INFO,
+                   format="%(asctime)s-%(name)s-%(levelname)s-%(message)s")
+logger = logging.getLogger("DataAnalysisAgent")
 
 # TEST TOOL
 @tool
@@ -38,119 +44,149 @@ def multiply(a:int,b:int)->int:
 @tool
 def get_statistics(runtime:ToolRuntime[None,DataAnalysisState],statistics: Literal["mean", "median", "mode","std","var","min","max","count"]) -> str:
     """Get summary statistics of the dataset."""
-    df=pd.DataFrame(runtime.state["dataframe"])
-    numeric_cols = df.select_dtypes(include="number").columns
-    if statistics == "mean":
-        return df[numeric_cols].mean().to_string()
-    elif statistics == "median":
-        return df[numeric_cols].median().to_string()
-    elif statistics == "mode":
-        return df[numeric_cols].mode().iloc[0].to_string()
-    elif statistics == "std":
-        return df[numeric_cols].std().to_string()
-    elif statistics == "var":
-        return df[numeric_cols].var().to_string()
-    elif statistics == "min":
-        return df[numeric_cols].min().to_string()
-    elif statistics == "max":
-        return df[numeric_cols].max().to_string()
-    elif statistics == "count":
-        return df[numeric_cols].count().to_string()
-    else:
-        raise ValueError("Invalid statistic. Choose from 'mean', 'median', 'mode', 'std', 'var', 'min', 'max', or 'count'.")
-
+    logger.info("Executing get_statistics")
+    try:
+        df=pd.DataFrame(runtime.state["dataframe"])
+        numeric_cols = df.select_dtypes(include="number").columns
+        if statistics == "mean":
+            return df[numeric_cols].mean().to_string()
+        elif statistics == "median":
+            return df[numeric_cols].median().to_string()
+        elif statistics == "mode":
+            return df[numeric_cols].mode().iloc[0].to_string()
+        elif statistics == "std":
+            return df[numeric_cols].std().to_string()
+        elif statistics == "var":
+            return df[numeric_cols].var().to_string()
+        elif statistics == "min":
+            return df[numeric_cols].min().to_string()
+        elif statistics == "max":
+            return df[numeric_cols].max().to_string()
+        elif statistics == "count":
+            return df[numeric_cols].count().to_string()
+        else:
+            raise ValueError("Invalid statistic. Choose from 'mean', 'median', 'mode', 'std', 'var', 'min', 'max', or 'count'.")
+    except Exception as e:
+        logger.exception(f"error executing get_statistics with error {e}")
+        return "Unable to retrieve statistic"
 @tool 
 def impute_missing_values(strategy: Literal["mean", "median", "mode","zero"],runtime:ToolRuntime[None,DataAnalysisState]) -> Command:
     """Impute missing values in the dataset using the specified strategy."""
-    df = pd.DataFrame(runtime.state["dataframe"])
-    numeric_cols = df.select_dtypes(include="number").columns
-    if strategy == "mean":
-        df[numeric_cols]=df[numeric_cols].fillna(df[numeric_cols].mean())
-    elif strategy == "median":
-        df[numeric_cols]=df[numeric_cols].fillna(df[numeric_cols].median())
-        
-    elif strategy == "mode":
-        df[numeric_cols]=df[numeric_cols].fillna(df[numeric_cols].mode())
+    logger.info("Executing impute_missing_values")
+    try:
+        df = pd.DataFrame(runtime.state["dataframe"])
+        numeric_cols = df.select_dtypes(include="number").columns
+        if strategy == "mean":
+            df[numeric_cols]=df[numeric_cols].fillna(df[numeric_cols].mean())
+        elif strategy == "median":
+            df[numeric_cols]=df[numeric_cols].fillna(df[numeric_cols].median())
+            
+        elif strategy == "mode":
+            df[numeric_cols]=df[numeric_cols].fillna(df[numeric_cols].mode())
 
-    elif strategy == "zero":
-        df[numeric_cols]=df[numeric_cols].fillna(0)
+        elif strategy == "zero":
+            df[numeric_cols]=df[numeric_cols].fillna(0)
 
+        else:
+            raise ValueError("Invalid strategy. Choose from 'mean', 'median', 'mode', or 'zero'.")
+    except Exception:
+        logger.exception("Exception while executing impute_missing_values")
+        return Command(update={
+                "dataframe":df.to_dict(orient="records"),
+                "messages":[
+                    ToolMessage(
+                        content=f"Missing values could not be imputed using {strategy}",
+                        tool_call_id=runtime.tool_call_id
+                    )
+                ]
+            })
     else:
-        raise ValueError("Invalid strategy. Choose from 'mean', 'median', 'mode', or 'zero'.")
-
-    return Command(update={
-        "dataframe":df.to_dict(orient="records"),
-        "messages":[
-            ToolMessage(
-                content=f"Missing values imputed using {strategy}",
-                tool_call_id=runtime.tool_call_id
-            )
-        ]
-    })
+        return Command(update={
+            "dataframe":df.to_dict(orient="records"),
+            "messages":[
+                ToolMessage(
+                    content=f"Missing values imputed using {strategy}",
+                    tool_call_id=runtime.tool_call_id
+                )
+            ]
+        })
 
 @tool
 def get_correlation(runtime:ToolRuntime[None,DataAnalysisState])->str:
     """ Get the path of correlation graph for dataframe saved as state"""
-    df = pd.DataFrame(runtime.state["dataframe"])
-    # print(type(df))
-    # print(df.shape)
-    # return "DataFrame Accessed successfully"
-    numeric_cols = df.select_dtypes(include="number").columns
-    corr = df[numeric_cols].corr(method='pearson',min_periods=1,numeric_only=True)
-    # print("Correlation heatmap head values:",corr.head())
-    if corr.empty:
-        return Command(update={
-            "messages":[
-                ToolMessage(content="No numeric column to get correlation for",
-                            tool_call_id=runtime.tool_call_id)
-            ]
-        })
-    # Create heatmap
-    fig,ax = plt.subplots(figsize=(9,7))
-    im = ax.imshow(corr.values,
-                   cmap='coolwarm',
-                   vmin=-1,
-                   vmax=1)
-    # Axis Labels
-    ax.set_xticks(np.arange(len(corr.columns)))
-    ax.set_yticks(np.arange(len(corr.columns)))
-    ax.set_xticklabels(corr.columns,rotation=45,ha="right")
-    ax.set_yticklabels(corr.columns)
-    # Display correlation values
-    for i in range(len(corr)):
-        for j in range(len(corr)):
-            ax.text(j,i,f"{corr.iloc[i,j]:.2f}",ha="center",va="center")
-    fig.colorbar(im,ax=ax,label="Correlation")
-    ax.set_title("Correlation Heatmap")
-    fig.tight_layout()
+    logger.info("Get correlation started being executed")
+    try:
+        df = pd.DataFrame(runtime.state["dataframe"])
+        numeric_cols = df.select_dtypes(include="number").columns
+        corr = df[numeric_cols].corr(method='pearson',min_periods=1,numeric_only=True)
+    except Exception as e:
+        logger.exception("Exception while executing get_correlation tool")
+        if corr.empty or e:
+            return Command(update={
+                "messages":[
+                    ToolMessage(content="Error in getting correlation.",
+                                tool_call_id=runtime.tool_call_id)
+                ]
+            })
+    else:
+        # Create heatmap
+        fig,ax = plt.subplots(figsize=(9,7))
+        im = ax.imshow(corr.values,
+                    cmap='coolwarm',
+                    vmin=-1,
+                    vmax=1)
+        # Axis Labels
+        ax.set_xticks(np.arange(len(corr.columns)))
+        ax.set_yticks(np.arange(len(corr.columns)))
+        ax.set_xticklabels(corr.columns,rotation=45,ha="right")
+        ax.set_yticklabels(corr.columns)
+        # Display correlation values
+        for i in range(len(corr)):
+            for j in range(len(corr)):
+                ax.text(j,i,f"{corr.iloc[i,j]:.2f}",ha="center",va="center")
+        fig.colorbar(im,ax=ax,label="Correlation")
+        ax.set_title("Correlation Heatmap")
+        fig.tight_layout()
 
-    # Save Image
-    fd,image_path = tempfile.mkstemp(suffix=".png")
-    os.close(fd)
-    fig.savefig(image_path,dpi=150,bbox_inches="tight")
-    plt.close(fig)
+        # Save Image
+        fd,image_path = tempfile.mkstemp(suffix=".png")
+        os.close(fd)
+        fig.savefig(image_path,dpi=150,bbox_inches="tight")
+        plt.close(fig)
 
-    # Update agent state
-    return Command(update={"visualization_path":image_path,
-                           "messages":[
-                               ToolMessage(content=(f"Correlation heatmap generated Successfully.\
-                                           CorrelationMatrix:\n{corr.round(2).to_string()}"),
-                                           tool_call_id=runtime.tool_call_id)
-                           ]})
+        # Update agent state
+        return Command(update={"visualization_path":image_path,
+                            "messages":[
+                                ToolMessage(content=(f"Correlation heatmap generated Successfully.\
+                                            CorrelationMatrix:\n{corr.round(2).to_string()}"),
+                                            tool_call_id=runtime.tool_call_id)
+                            ]})
 
 
 @tool
 def get_missing_values_count(runtime:ToolRuntime[None,DataAnalysisState])->Command:
     """ Retrieves the count and percentage of NaN values"""
-    df = pd.DataFrame(runtime.state["dataframe"])
-    count_zeroes = df.isna().sum()
-    percentage_zeroes = count_zeroes/(len(df))
-    return Command(update={"count_zeroes":count_zeroes.tolist(),
-                           "percentage_zeroes":percentage_zeroes.tolist(),
-                               "messages":[
-                                   ToolMessage(content=(f"Missing value count retrieved successfully."),
-                                               tool_call_id=runtime.tool_call_id)
-                               ]})
+    logger.info("Executing get_missing_values_count_tool")
+    try:
+        df = pd.DataFrame(runtime.state["dataframe"])
+        count_zeroes = df.isna().sum()
+        percentage_zeroes = count_zeroes/(len(df))
+    except Exception as e:
+        logger.exception("Exception while getting missing values count")
+        return Command(update={"count_zeroes":None,
+                                    "percentage_zeroes":None,
+                                        "messages":[
+                                            ToolMessage(content=(f"Missing value count could not be retrieved."),
+                                                        tool_call_id=runtime.tool_call_id)
+                                        ]})
+        
+    else:
+        return Command(update={"count_zeroes":count_zeroes.tolist(),
+                            "percentage_zeroes":percentage_zeroes.tolist(),
+                                "messages":[
+                                    ToolMessage(content=(f"Missing value count retrieved successfully."),
+                                                tool_call_id=runtime.tool_call_id)
+                                ]})
 
 @tool
 def get_charts(x:Literal["Education","JoiningYear","City","PaymentTier","Age","Gender","EverBenched","ExperienceInCurrentDomain","LeaveOrNot"],
@@ -158,49 +194,48 @@ def get_charts(x:Literal["Education","JoiningYear","City","PaymentTier","Age","G
                plot_type:Literal["histogram","line","scatter","bar"],
                runtime:ToolRuntime[None,DataAnalysisState])->Command:
     """ Creates a plot based on the plot type requested by the user,using the x and/or y dataframe columns provided"""
-    df = pd.DataFrame(runtime.state["dataframe"])
-    if plot_type == "histogram":
-        plt.hist(df[x].to_numpy(),bins=20)
-        plt.title("Histogram")
-        plt.xlabel(f"{x}")
-        plt.ylabel(f"Values")
-    elif plot_type == "line":
-        plt.plot(df[x].to_numpy(),df[y].to_numpy(),linestyle="--",marker="o")
-        plt.title("Basic Line Chart")
-        plt.xlabel(f"{x}")
-        plt.ylabel(f"{y}")
-    elif plot_type == "scatter":
-        plt.scatter(df[x].to_numpy(),df[y].to_numpy())
-        plt.title("Scatter Plot")
-        plt.xlabel(f"{x}")
-        plt.ylabel(f"{y}")
+    logger.info("Executing get_charts tool")
+    try:
+        df = pd.DataFrame(runtime.state["dataframe"])
+        if plot_type == "histogram":
+            plt.hist(df[x].to_numpy(),bins=20)
+            plt.title("Histogram")
+            plt.xlabel(f"{x}")
+            plt.ylabel(f"Values")
+        elif plot_type == "line":
+            plt.plot(df[x].to_numpy(),df[y].to_numpy(),linestyle="--",marker="o")
+            plt.title("Basic Line Chart")
+            plt.xlabel(f"{x}")
+            plt.ylabel(f"{y}")
+        elif plot_type == "scatter":
+            plt.scatter(df[x].to_numpy(),df[y].to_numpy())
+            plt.title("Scatter Plot")
+            plt.xlabel(f"{x}")
+            plt.ylabel(f"{y}")
+        else:
+            plt.bar(df[x],df[y].to_numpy())
+            plt.title("Bar Chart")
+            plt.xlabel(f"{x}")
+            plt.ylabel(f"Values")
+    except Exception as e:
+        logger.exception(f"Charts could not be created due to error:{e}")
+        return Command(update={"visualization_path":None,
+                                    "messages":[
+                                        ToolMessage(content=(f"Plot could not be generated."),
+                                                    tool_call_id=runtime.tool_call_id)
+                                    ]})
     else:
-        plt.bar(df[x],df[y].to_numpy())
-        plt.title("Bar Chart")
-        plt.xlabel(f"{x}")
-        plt.ylabel(f"Values")
-
-
-    plt.savefig("plot_temp.png",dpi=150,bbox_inches="tight")
-    image_path = Path.cwd() / "plot_temp.png"
-    # Update agent state
-    return Command(update={"visualization_path":image_path,
-                            "messages":[
-                                ToolMessage(content=(f"Plot generated Successfully."),
-                                            tool_call_id=runtime.tool_call_id)
-                            ]})
+        plt.savefig("plot_temp.png",dpi=150,bbox_inches="tight")
+        image_path = Path.cwd() / "plot_temp.png"
+        # Update agent state
+        return Command(update={"visualization_path":image_path,
+                                "messages":[
+                                    ToolMessage(content=(f"Plot generated Successfully."),
+                                                tool_call_id=runtime.tool_call_id)
+                                ]})
     
 
     
-class StatisticDisplay(BaseModel):
-    mean:float = Field(description="average")
-    median:float = Field(description="median")
-    mode:float = Field(description="mode")
-    std:float = Field(description="standard deviation")
-    var:float = Field(description="variance")
-    min:float = Field(description="minimum")
-    max:float = Field(description="maximum")
-    count:float = Field(description="total count")
 
 if 'query_btn_enabled' not in st.session_state:  # Initialize the query button state
     st.session_state['query_btn_enabled'] = False
@@ -261,29 +296,40 @@ if st.session_state['query_btn_enabled']:
                 "thread_id":"user_session_1"
             }
         }
-        
-        response = agent.invoke({"messages":
-            [
-                {"role":"user","content":query}
-            ],
-            
-            "dataframe":st.session_state["dataframe"].to_dict(orient='records'),
-            "visualization_path":None,
-            "count_zeroes":None,
-            "percentage_zeroes":None,
-            }
-            ,config=config
-            )
-        updated_df = pd.DataFrame(response["dataframe"])
 
-        # st.write(response["messages"])
-        st.session_state["dataframe"] = updated_df
-        if response.get("visualization_path"):
-            st.image(response["visualization_path"],caption="Plot",use_container_width=True)
-        if response.get("count_zeroes"):
-            columns = updated_df.columns.tolist()
-            st.subheader("Zeroes Count | Zeroes Percentage")
-            for i in range(len(columns)):
-                st.write(f"{columns[i]}:{response['count_zeroes'][i]}|{response['percentage_zeroes'][i]}%")
+        try:
+
+            logger.info("Starting agent invocation")
+            
+            response = agent.invoke({"messages":
+                [
+                    {"role":"user","content":query}
+                ],
+                
+                "dataframe":st.session_state["dataframe"].to_dict(orient='records'),
+                "visualization_path":None,
+                "count_zeroes":None,
+                "percentage_zeroes":None,
+                }
+                ,config=config
+                )
+            
+
+            updated_df = pd.DataFrame(response["dataframe"])
+
+            logger.info("Agent invocation complete")
+        except Exception:
+            logger.exception("Agent invocation failed")
+
+        else:    
+            st.session_state["dataframe"] = updated_df
+            
+            if response.get("visualization_path"):
+                st.image(response["visualization_path"],caption="Plot",use_container_width=True)
+            if response.get("count_zeroes"):
+                columns = updated_df.columns.tolist()
+                st.subheader("Zeroes Count | Zeroes Percentage")
+                for i in range(len(columns)):
+                    st.write(f"{columns[i]}:{response['count_zeroes'][i]}|{response['percentage_zeroes'][i]}%")
 
             
