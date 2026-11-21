@@ -28,6 +28,7 @@ import traceback
 
 class DataAnalysisState(AgentState):
     dataframe: pd.DataFrame
+    statistic: NotRequired[str]
     visualization_path: NotRequired[str]
     count_zeroes:NotRequired[list[int]]
     percentage_zeroes:NotRequired[list[float]]
@@ -45,33 +46,46 @@ def multiply(a:int,b:int)->int:
 
 
 @tool
-def get_statistics(runtime:ToolRuntime[None,DataAnalysisState],statistics: Literal["mean", "median", "mode","std","var","min","max","count"]) -> str:
+def get_statistics(runtime:ToolRuntime[None,DataAnalysisState],statistics: Literal["mean", "median", "mode","std","var","min","max","count"]) -> Command:
     """Get summary statistics of the dataset."""
     logger.info("Executing get_statistics")
     try:
         df=pd.DataFrame(runtime.state["dataframe"])
         numeric_cols = df.select_dtypes(include="number").columns
         if statistics == "mean":
-            return df[numeric_cols].mean().to_string()
+            data = df[numeric_cols].mean().to_string()
         elif statistics == "median":
-            return df[numeric_cols].median().to_string()
+            data =  df[numeric_cols].median().to_string()
         elif statistics == "mode":
-            return df[numeric_cols].mode().iloc[0].to_string()
+            data = df[numeric_cols].mode().iloc[0].to_string()
         elif statistics == "std":
-            return df[numeric_cols].std().to_string()
+            data = df[numeric_cols].std().to_string()
         elif statistics == "var":
-            return df[numeric_cols].var().to_string()
+            data = df[numeric_cols].var().to_string()
         elif statistics == "min":
-            return df[numeric_cols].min().to_string()
+            data = df[numeric_cols].min().to_string()
         elif statistics == "max":
-            return df[numeric_cols].max().to_string()
+            data = df[numeric_cols].max().to_string()
         elif statistics == "count":
-            return df[numeric_cols].count().to_string()
+            data = df[numeric_cols].count().to_string()
         else:
             raise ValueError("Invalid statistic. Choose from 'mean', 'median', 'mode', 'std', 'var', 'min', 'max', or 'count'.")
     except Exception as e:
         logger.exception(f"error executing get_statistics with error {e}")
-        return "Unable to retrieve statistic"
+        return Command(update={"statistic":"Unable to retrieve statistic",
+                               "messages":[
+                                   ToolMessage(content="error while fetching rquested statistic",
+                                               tool_call_id=runtime.tool_call_id)
+                               ]
+                               })
+    else:
+        return Command(update={"statistic":data,
+                                       "messages":[
+                                           ToolMessage(content="Fetching rquested statistic",
+                                                       tool_call_id=runtime.tool_call_id)
+                                       ]
+                                       })
+
 @tool 
 def impute_missing_values(strategy: Literal["mean", "median", "mode","zero"],runtime:ToolRuntime[None,DataAnalysisState]) -> Command:
     """Impute missing values in the dataset using the specified strategy."""
@@ -310,6 +324,7 @@ if st.session_state['query_btn_enabled']:
                 ],
                 
                 "dataframe":st.session_state["dataframe"].to_dict(orient='records'),
+                "statistic":None,
                 "visualization_path":None,
                 "count_zeroes":None,
                 "percentage_zeroes":None,
@@ -334,5 +349,7 @@ if st.session_state['query_btn_enabled']:
                 st.subheader("Zeroes Count | Zeroes Percentage")
                 for i in range(len(columns)):
                     st.write(f"{columns[i]}:{response['count_zeroes'][i]}|{response['percentage_zeroes'][i]}%")
+            if response.get("statistic"):
+                st.write(f"The statistic requested is:{response["statistic"]}")
 
             
