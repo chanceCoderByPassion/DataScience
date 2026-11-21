@@ -22,6 +22,7 @@ import tempfile
 import matplotlib.pyplot as plt
 from pydantic import BaseModel, Field
 import logging
+import traceback
 
 class DataAnalysisState(AgentState):
     dataframe: pd.DataFrame
@@ -320,7 +321,7 @@ if st.session_state['query_btn_enabled']:
             logger.info("Agent invocation complete")
         except Exception:
             logger.exception("Agent invocation failed")
-
+            st.error(f"{traceback.print_exc()}")
         else:    
             st.session_state["dataframe"] = updated_df
             
