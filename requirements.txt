@@ -32,3 +32,5 @@ mysql-connector-python
 langgraph
 numpy
 matplotlib
+pystray
+pillow
